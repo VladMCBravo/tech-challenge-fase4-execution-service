@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: execution-service
+  labels:
+    app: execution-service
+    tags.datadoghq.com/service: "execution-service"
+    tags.datadoghq.com/env: "production"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: execution-service
+  template:
+    metadata:
+      labels:
+        app: execution-service
+        tags.datadoghq.com/service: "execution-service"
+        tags.datadoghq.com/env: "production"
+      annotations:
+        ad.datadoghq.com/api.logs: '[{"source":"nodejs","service":"execution-service"}]'
+    spec:
+      containers:
+        - name: api
+          image: 538889416411.dkr.ecr.us-east-1.amazonaws.com/oficina-execution-service:latest
+          imagePullPolicy: Always
+          command: ['/bin/sh', '-c', '[ -f dist/src/main.js ] && node dist/src/main.js || node dist/main.js']
+          ports:
+            - containerPort: 3002
+          envFrom:
+            - secretRef:
+                name: execution-service-secrets
+          env:
+            - name: PORT
+              value: "3002"
+            - name: MONGODB_URI
+              value: "mongodb://mongodb-service:27017/execution_db"
+            - name: MONGODB_DATABASE
+              value: "execution_db"
+            - name: RABBITMQ_URL
+              value: "amqp://guest:guest@rabbitmq-service:5672"
+            - name: RABBITMQ_QUEUE
+              value: "execution-service.saga.queue"
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_ENV
+              value: "production"
+            - name: DD_SERVICE
+              value: "execution-service"
+            - name: DD_VERSION
+              value: "4.0.0"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3002
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"

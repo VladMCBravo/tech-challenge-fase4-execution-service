@@ -1,0 +1,31 @@
+version: '3.9'
+
+services:
+  mongodb-execution:
+    image: mongo:7
+    container_name: oficina-mongodb-execution
+    ports:
+      - '27017:27017'
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: oficina-rabbitmq
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+
+  execution-service:
+    build: .
+    container_name: oficina-execution-service
+    depends_on:
+      - mongodb-execution
+      - rabbitmq
+    environment:
+      PORT: 3002
+      MONGODB_URI: mongodb://mongodb-execution:27017/execution_db
+      MONGODB_DATABASE: execution_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RABBITMQ_QUEUE: execution-service.saga.queue
+      JWT_SECRET: super-secret-jwt-oficina-soat
+    ports:
+      - '3002:3002'
