@@ -7,11 +7,12 @@ Microsserviço responsável pelo gerenciamento da **Fila de Execução e Produç
 
 ---
 
-## 1. Justificativa do Banco NoSQL (MongoDB — `execution_db`)
+## 1. Justificativa do Banco NoSQL (MongoDB — `execution_db`) e Infra Isolada
 
 O `execution-service` utiliza **MongoDB (NoSQL orientado a documentos)** pela natureza semiestruturada e orientada a eventos do chão de oficina:
 - Cada tarefa de execução (`execution_tasks`) armazena em um **único documento agregado** a lista de serviços, peças planejadas e um array dinâmico de etapas/apontamentos do mecânico (`steps: [{ stage, description, mechanicName, timestamp }]`).
 - Leituras da fila priorizada (`IN_REPAIR > IN_DIAGNOSIS > QUEUED`) e gravações de progresso ocorrem com **baixa latência e sem necessidade de JOINs**.
+- **Infraestrutura Terraform Própria (`/infra`) e Manifestos K8s (`/k8s`):** Provisionamento isolado do repositório ECR e do cluster NoSQL (`execution_db`), sem compartilhamento de banco com os demais microsserviços.
 
 ---
 
@@ -53,7 +54,14 @@ Tests:       7 passed, 7 total
 
 ---
 
-## 4. Principais Endpoints e Execução
+## 4. CI/CD, Deploy Automatizado em Kubernetes e Nota sobre AWS Academy
+
+- O pipeline `.github/workflows/deploy.yml` possui gatilhos automáticos (`push` e `pull_request` na `main`) e `workflow_dispatch`.
+- Devido à limitação de expiração de sessão do **AWS Academy**, o job `deploy-k8s` provisiona automaticamente um cluster Kubernetes no pipeline via **Kind (`helm/kind-action`)**, aplica todos os manifestos de `/k8s` (`mongodb.yaml`, `secret.yaml`, `deployment.yaml`, `service.yaml`, `hpa.yaml`) e valida o rollout e status dos Pods/Services. Quando as credenciais AWS Academy estão ativas, realiza também o deploy no **Amazon EKS**.
+
+---
+
+## 5. Principais Endpoints e Execução
 
 - `GET /api/executions/queue` — Lista fila ativa ordenada por prioridade (`IN_REPAIR > IN_DIAGNOSIS > QUEUED` + FIFO)
 - `GET /api/executions/work-order/:workOrderId` — Consulta documento NoSQL e histórico de apontamentos da OS
