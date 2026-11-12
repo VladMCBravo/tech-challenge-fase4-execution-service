@@ -20,6 +20,8 @@ spec:
       annotations:
         ad.datadoghq.com/api.logs: '[{"source":"nodejs","service":"execution-service"}]'
     spec:
+      # A aplicação não acessa a API do Kubernetes: não monta o token da service account
+      automountServiceAccountToken: false
       containers:
         - name: api
           image: 538889416411.dkr.ecr.us-east-1.amazonaws.com/oficina-execution-service:latest
@@ -65,8 +67,10 @@ spec:
             periodSeconds: 10
           resources:
             requests:
+              ephemeral-storage: "64Mi"
               memory: "128Mi"
               cpu: "100m"
             limits:
+              ephemeral-storage: "512Mi"
               memory: "256Mi"
               cpu: "200m"

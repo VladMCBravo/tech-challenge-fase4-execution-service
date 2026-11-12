@@ -31,6 +31,8 @@ resource "aws_docdb_cluster" "execution_db" {
   master_password         = var.db_password
   skip_final_snapshot     = true
   storage_encrypted       = true
+  backup_retention_period         = 7
+  enabled_cloudwatch_logs_exports = ["audit", "profiler"]
 
   tags = {
     Project     = var.project_name
