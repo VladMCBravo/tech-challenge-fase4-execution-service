@@ -12,6 +12,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
+# Logs estruturados em JSON (pino) e sem dependências de desenvolvimento no runtime
+ENV NODE_ENV=production
 USER node
 EXPOSE 3002
 CMD ["/bin/sh", "-c", "[ -f dist/src/main.js ] && node dist/src/main.js || node dist/main.js"]

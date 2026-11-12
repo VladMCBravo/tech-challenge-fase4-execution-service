@@ -1,11 +1,15 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { MongoService } from '../database/mongo.service';
+import { RabbitMQService } from '../messaging/rabbitmq.service';
 
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
-  constructor(private readonly mongo: MongoService) {}
+  constructor(
+    private readonly mongo: MongoService,
+    private readonly rabbitMQ: RabbitMQService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Liveness probe do Execution Service' })
@@ -13,7 +17,8 @@ export class HealthController {
     return {
       status: 'ok',
       service: 'execution-service',
-      database: 'mongodb-nosql',
+      database: this.mongo.isUsingMongo() ? 'mongodb' : 'in-memory',
+      messaging: this.rabbitMQ.getStatus(),
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     };
@@ -26,7 +31,8 @@ export class HealthController {
       await this.mongo.ping();
       return {
         status: 'ready',
-        database: 'mongodb-connected',
+        database: this.mongo.isUsingMongo() ? 'mongodb-connected' : 'in-memory',
+        messaging: this.rabbitMQ.getStatus(),
         timestamp: new Date().toISOString(),
       };
     } catch (e) {

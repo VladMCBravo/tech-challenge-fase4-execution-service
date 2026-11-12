@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { MongoClient } from 'mongodb';
 
 export interface ExecutionStepDocument {
   stage: string;
@@ -65,26 +66,49 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { MongoClient } = require('mongodb');
-      this.client = new MongoClient(mongoUri);
-      await this.client.connect();
-      const dbName = process.env.MONGODB_DATABASE ?? 'execution_db';
-      this.db = this.client.db(dbName);
-      await this.db
-        .collection('execution_tasks')
-        .createIndex({ workOrderId: 1 }, { unique: true });
-      await this.db
-        .collection('execution_tasks')
-        .createIndex({ status: 1, priority: 1, queuedAt: 1 });
-      this.logger.log(`Conectado ao banco NoSQL MongoDB (${dbName}).`);
-    } catch (error) {
-      this.logger.warn(
-        `Não foi possível conectar ao MongoDB (${String(error)}). Usando coleção NoSQL em memória.`,
-      );
-      this.db = null;
+    // Com MONGODB_URI definido o serviço exige o MongoDB real: tenta conectar
+    // algumas vezes (o banco pode ainda estar subindo no Kubernetes) e, se não
+    // conseguir, falha o boot para o Kubernetes reiniciar o pod — sem cair
+    // silenciosamente para memória.
+    const maxAttempts = Number(process.env.MONGODB_CONNECT_ATTEMPTS ?? 10);
+    const retryDelayMs = Number(process.env.MONGODB_RETRY_MS ?? 3000);
+    const dbName = process.env.MONGODB_DATABASE ?? 'execution_db';
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        this.client = new MongoClient(mongoUri, {
+          serverSelectionTimeoutMS: 5000,
+        });
+        await this.client.connect();
+        this.db = this.client.db(dbName);
+        await this.db
+          .collection('execution_tasks')
+          .createIndex({ workOrderId: 1 }, { unique: true });
+        await this.db
+          .collection('execution_tasks')
+          .createIndex({ status: 1, priority: 1, queuedAt: 1 });
+        this.logger.log(`Conectado ao banco NoSQL MongoDB (${dbName}).`);
+        return;
+      } catch (error) {
+        this.db = null;
+        await this.client?.close().catch(() => undefined);
+        this.client = null;
+        this.logger.warn(
+          `Falha ao conectar ao MongoDB (tentativa ${attempt}/${maxAttempts}): ${String(error)}`,
+        );
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        }
+      }
     }
+
+    throw new Error(
+      `Não foi possível conectar ao MongoDB após ${maxAttempts} tentativas.`,
+    );
+  }
+
+  isUsingMongo(): boolean {
+    return this.db !== null;
   }
 
   async ping(): Promise<boolean> {
