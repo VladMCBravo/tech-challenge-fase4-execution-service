@@ -14,6 +14,8 @@ spec:
       labels:
         app: mongodb-execution
     spec:
+      # A aplicação não acessa a API do Kubernetes: não monta o token da service account
+      automountServiceAccountToken: false
       containers:
         - name: mongodb
           image: mongo:7
@@ -27,9 +29,11 @@ spec:
             timeoutSeconds: 10
           resources:
             requests:
+              ephemeral-storage: "64Mi"
               memory: "256Mi"
               cpu: "100m"
             limits:
+              ephemeral-storage: "2Gi"
               memory: "1Gi"
               cpu: "500m"
 ---
