@@ -7,6 +7,55 @@ Microsserviço responsável pelo gerenciamento da **Fila de Execução e Produç
 
 ---
 
+## Arquitetura do serviço
+
+### Componentes
+```mermaid
+flowchart LR
+    mec["Mecânico / Atendente"] -->|HTTPS + JWT| gw["Amazon API Gateway"]
+    gw -->|REST /api/executions| api
+
+    subgraph k8s["Kubernetes (EKS / Kind) — namespace da aplicação"]
+        api["execution-service<br/>NestJS :3002<br/>Deployment 2-5 réplicas + HPA"]
+        db[("MongoDB execution_db<br/>coleção execution_tasks<br/>documento agregado + steps[]")]
+        mq{{"RabbitMQ<br/>exchange topic oficina.saga<br/>fila execution-service.saga.queue"}}
+    end
+
+    api -->|driver mongodb| db
+    mq -->|"consome: os.execution.requested<br/>payment.approved"| api
+    api -->|"publica: execution.finished<br/>execution.failed"| mq
+    api -.->|APM traces · logs JSON · métricas| dd["Datadog"]
+```
+
+### Participação na Saga coreografada
+```mermaid
+sequenceDiagram
+    autonumber
+    participant OS as os-service
+    participant MQ as RabbitMQ (oficina.saga)
+    participant EX as execution-service
+    participant DB as execution_db (MongoDB)
+    participant BI as billing-service
+
+    OS->>MQ: os.execution.requested (após payment.approved)
+    MQ->>EX: os.execution.requested
+    EX->>DB: insere execution_task QUEUED
+    Note over EX,DB: fila priorizada: IN_REPAIR > IN_DIAGNOSIS > QUEUED
+    EX->>DB: PATCH progress → IN_DIAGNOSIS / IN_REPAIR (steps[])
+    alt reparo concluído
+        EX->>DB: COMPLETED
+        EX->>MQ: execution.finished
+        MQ->>OS: OS → FINISHED
+    else falha crítica (compensação)
+        EX->>DB: FAILED + failureReason
+        EX->>MQ: execution.failed
+        MQ->>BI: estorna o pagamento no Mercado Pago (REFUNDED)
+        MQ->>OS: devolve peças ao estoque (REVERSAL) e OS → CANCELLED
+    end
+```
+
+---
+
 ## 1. Justificativa do Banco NoSQL (MongoDB — `execution_db`) e Infra Isolada
 
 O `execution-service` utiliza **MongoDB (NoSQL orientado a documentos)** pela natureza semiestruturada e orientada a eventos do chão de oficina:
